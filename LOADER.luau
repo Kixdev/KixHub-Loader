@@ -2,7 +2,8 @@
 -- Main entry point for game detection, payload routing, and runtime startup.
 
 local CONFIG = {
-    -- development = branch ref; production = tagged or immutable ref.
+    -- Set this to the distribution endpoint before publishing.
+    DistributionBaseUrl = "PASTE_DISTRIBUTION_ENDPOINT",
     Channel = "development",
     RequestAttempts = 3,
     RetryDelay = 1,
@@ -49,20 +50,16 @@ local Games = {
     ["79546208627805"] = {
         Name = "99 Nights in the Forest",
         GameId = "7326934954",
-
-        -- Branch URL for active development.
-        DevelopmentUrl = "https://raw.githack.com/Kixdev/KixHub-Loader/main/dist/99nights-dev.luau",
-
-        -- Tagged or commit URL for production.
-        ProductionUrl = "https://rawcdn.githack.com/Kixdev/KixHub-Loader/v1.0.0/dist/99nights.luau",
+        DevelopmentPath = "/kixhub/99nights/development",
+        ProductionPath = "/kixhub/99nights/production",
     },
 
     --[[ Copy for a new game.
     ["PLACE_ID_HERE"] = {
         Name = "New Game Name",
         GameId = "OPTIONAL_UNIVERSE_ID",
-        DevelopmentUrl = "https://raw.githack.com/USER/REPOSITORY/main/payload.luau",
-        ProductionUrl = "https://rawcdn.githack.com/USER/REPOSITORY/v1.0.0/payload.luau",
+        DevelopmentPath = "/kixhub/new-game/development",
+        ProductionPath = "/kixhub/new-game/production",
     },
     ]]
 }
@@ -231,9 +228,10 @@ if not entry then
     return
 end
 
-local url = CONFIG.Channel == "production"
-    and entry.ProductionUrl
-    or entry.DevelopmentUrl
+local path = CONFIG.Channel == "production"
+    and entry.ProductionPath
+    or entry.DevelopmentPath
+local url = CONFIG.DistributionBaseUrl .. path
 
 updateStatus("Loading " .. entry.Name .. "...\nPlaceId: " .. placeId)
 
