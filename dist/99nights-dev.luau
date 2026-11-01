@@ -500,11 +500,12 @@ function UI.Build(WindUI, options)
     local orderedTabs = {}
 
     local function addTab(key, title, icon)
-        local tab = window:Tab({ Title = title, Icon = icon })
-
+        local tabOptions = { Title = title, Icon = icon }
         if key == "Updates" then
-            tab.TwoColumns = false
+            tabOptions.TwoColumns = false
         end
+
+        local tab = window:Tab(tabOptions)
 
         if type(tab.Toggle) == "function" then
             local createToggle = tab.Toggle
