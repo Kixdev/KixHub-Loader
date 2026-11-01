@@ -119,6 +119,7 @@ local Runtime = KixRequire("Core.Runtime")
 local FeatureManager = KixRequire("Core.FeatureManager")
 local WindUIProvider = KixRequire("UI.WindUIProvider")
 local UIAdapter = KixRequire("UI.WindUIAdapter")
+local Community = KixRequire("Games.99Nights.features.community")
 
 local Entry = {}
 
@@ -148,6 +149,8 @@ function Entry.Start(context)
         Content = "Feature modules will be loaded independently.",
     })
 
+    Community.Build(ui.Tabs.Community, windUI)
+
     return function(reason)
         features:StopAll(reason or "shutdown")
         runtime:Stop(reason or "shutdown")
@@ -161,6 +164,78 @@ function Entry.Start(context)
 end
 
 return Entry
+end
+
+__modules["Games.99Nights.features.community"] = function()
+local Community = {}
+
+Community.InviteUrl = "https://discord.gg/9FgdcXq8vQ"
+
+local function copyInvite()
+    local copier = setclipboard or toclipboard or (syn and syn.write_clipboard)
+    if type(copier) ~= "function" then
+        return false
+    end
+
+    return pcall(copier, Community.InviteUrl)
+end
+
+local function notify(windUI, title, content)
+    if type(windUI.Notify) == "function" then
+        windUI:Notify({
+            Title = title,
+            Content = content,
+            Duration = 3,
+        })
+    end
+end
+
+function Community.Build(tab, windUI)
+    local overview = tab:Section({
+        Title = "99 Nights Community",
+        Opened = true,
+    })
+
+    overview:Paragraph({
+        Title = "Stay connected",
+        Desc = "Join the official community for announcements, release notes, bug reports, and practical support.",
+        Buttons = {
+            {
+                Icon = "copy",
+                Title = "Copy invite link",
+                Callback = function()
+                    if copyInvite() then
+                        notify(windUI, "Community invite", "The invite link has been copied to your clipboard.")
+                    else
+                        notify(windUI, "Clipboard unavailable", "Copying is not available in this environment.")
+                    end
+                end,
+            },
+        },
+    })
+
+    local reasons = tab:Section({
+        Title = "Why join?",
+        Opened = true,
+    })
+
+    reasons:Paragraph({
+        Title = "Announcements",
+        Desc = "Keep abreast of the latest releases, maintenance notices, and feature updates.",
+    })
+
+    reasons:Paragraph({
+        Title = "Bug reports",
+        Desc = "Report issues clearly so they can be investigated and prioritised properly.",
+    })
+
+    reasons:Paragraph({
+        Title = "Support",
+        Desc = "Ask questions, share solutions, and receive guidance from the community.",
+    })
+end
+
+return Community
 end
 
 __modules["Games.99Nights.manifest"] = function()
@@ -242,8 +317,113 @@ end
 return Scheduler
 end
 
+__modules["UI.ToggleInteraction"] = function()
+local ToggleInteraction = {}
+
+local function setValue(toggle, value)
+    if type(toggle.Set) == "function" then
+        toggle:Set(value)
+    elseif type(toggle.SetValue) == "function" then
+        toggle:SetValue(value)
+    elseif type(toggle.SetState) == "function" then
+        toggle:SetState(value)
+    end
+end
+
+local function isInside(inputPosition, object)
+    local position = object.AbsolutePosition
+    local size = object.AbsoluteSize
+
+    return inputPosition.X >= position.X
+        and inputPosition.X <= position.X + size.X
+        and inputPosition.Y >= position.Y
+        and inputPosition.Y <= position.Y + size.Y
+end
+
+function ToggleInteraction.Bind(toggle)
+    if type(toggle) ~= "table" or toggle.__KixContainerBound then
+        return toggle
+    end
+
+    local ok = pcall(function()
+        local toggleFrame = toggle.ToggleFrame
+        local elements = toggleFrame and toggleFrame.UIElements
+        local container = elements and elements.Container
+        local main = elements and elements.Main
+        local switch = main and main:FindFirstChild("ToggleFrame", true)
+
+        if not container or not switch then
+            return
+        end
+
+        toggle.__KixContainerBound = true
+        container.Active = false
+
+        local userInput = game:GetService("UserInputService")
+        local touchInput
+        local touchStart
+        local touchCancelled = false
+        local touchThreshold = 2
+
+        container.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if not isInside(input.Position, switch) then
+                    setValue(toggle, not toggle.Value)
+                end
+                return
+            end
+
+            if input.UserInputType ~= Enum.UserInputType.Touch or touchInput then
+                return
+            end
+
+            if isInside(input.Position, switch) then
+                return
+            end
+
+            touchInput = input
+            touchStart = input.Position
+            touchCancelled = false
+        end)
+
+        userInput.InputChanged:Connect(function(input)
+            if input == touchInput then
+                local delta = input.Position - touchStart
+                if delta.Magnitude >= touchThreshold then
+                    touchCancelled = true
+                end
+            end
+        end)
+
+        userInput.InputEnded:Connect(function(input)
+            if input ~= touchInput then
+                return
+            end
+
+            local cancelled = touchCancelled
+            touchInput = nil
+            touchStart = nil
+            touchCancelled = false
+
+            if not cancelled then
+                setValue(toggle, not toggle.Value)
+            end
+        end)
+    end)
+
+    if not ok then
+        return toggle
+    end
+
+    return toggle
+end
+
+return ToggleInteraction
+end
+
 __modules["UI.WindUIAdapter"] = function()
 local UI = {}
+local ToggleInteraction = KixRequire("UI.ToggleInteraction")
 
 function UI.Build(WindUI, options)
     options = options or {}
@@ -268,6 +448,16 @@ function UI.Build(WindUI, options)
 
     local function addTab(key, title, icon)
         local tab = window:Tab({ Title = title, Icon = icon })
+
+        if type(tab.Toggle) == "function" then
+            local createToggle = tab.Toggle
+            tab.Toggle = function(self, config)
+                local toggle = createToggle(self, config)
+                ToggleInteraction.Bind(toggle)
+                return toggle
+            end
+        end
+
         tabs[key] = tab
         orderedTabs[#orderedTabs + 1] = tab
         return tab
@@ -289,10 +479,6 @@ function UI.Build(WindUI, options)
     window:Divider()
 
     addTab("Settings", "Settings", "sliders-horizontal")
-
-    for _, tab in ipairs(orderedTabs) do
-        tab:AddSearch("Search features...")
-    end
 
     local watermark = window:Watermark({
         Title = options.WatermarkTitle or "KixHub",
