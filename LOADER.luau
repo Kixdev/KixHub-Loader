@@ -51,10 +51,10 @@ local Games = {
         GameId = "7326934954",
 
         -- Branch URL for active development.
-        DevelopmentUrl = "PASTE_RAW_GITHACK_DEVELOPMENT_URL_HERE",
+        DevelopmentUrl = "https://raw.githack.com/Kixdev/KixHub-Loader/main/dist/99nights-dev.luau",
 
         -- Tagged or commit URL for production.
-        ProductionUrl = "PASTE_RAWCDN_GITHACK_PRODUCTION_URL_HERE",
+        ProductionUrl = "https://rawcdn.githack.com/Kixdev/KixHub-Loader/v1.0.0/dist/99nights.luau",
     },
 
     --[[ Copy for a new game.
