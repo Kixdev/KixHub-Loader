@@ -1,8 +1,5 @@
 -- KIXHUB Universal Loader
 -- Main entry point for game detection, payload routing, and runtime startup.
---
--- Add new games in the Games registry. Keep development and production
--- payloads on separate refs so releases remain predictable.
 
 local CONFIG = {
     -- development = branch ref; production = tagged or immutable ref.
