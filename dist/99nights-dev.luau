@@ -120,6 +120,7 @@ local FeatureManager = KixRequire("Core.FeatureManager")
 local WindUIProvider = KixRequire("UI.WindUIProvider")
 local UIAdapter = KixRequire("UI.WindUIAdapter")
 local Community = KixRequire("Games.99Nights.features.community")
+local Updates = KixRequire("Games.99Nights.features.updates")
 
 local Entry = {}
 
@@ -150,6 +151,7 @@ function Entry.Start(context)
     })
 
     Community.Build(ui.Tabs.Community, windUI)
+    Updates.Build(ui.Tabs.Updates)
 
     return function(reason)
         features:StopAll(reason or "shutdown")
@@ -236,6 +238,57 @@ function Community.Build(tab, windUI)
 end
 
 return Community
+end
+
+__modules["Games.99Nights.features.updates"] = function()
+local Updates = {}
+
+function Updates.Build(tab)
+    local latest = tab:Section({
+        Title = "Latest Update",
+        Opened = true,
+        FullWidth = true,
+    })
+
+    latest:Paragraph({
+        Title = "Added",
+        Desc = table.concat({
+            "Auto Hollow",
+            "Auto Farm Candy",
+            "Auto Raid Stronghold",
+        }, "\n• "),
+        FullWidth = true,
+    })
+
+    latest:Paragraph({
+        Title = "Changed",
+        Desc = table.concat({
+            "Improved performance and reduced unnecessary lag.",
+            "Auto Eat no longer displays disruptive notifications.",
+        }, "\n• "),
+        FullWidth = true,
+    })
+
+    latest:Paragraph({
+        Title = "Fixed",
+        Desc = "The full automation system has been stabilised and repaired.",
+        FullWidth = true,
+    })
+
+    local developer = tab:Section({
+        Title = "Developer",
+        Opened = true,
+        FullWidth = true,
+    })
+
+    developer:Paragraph({
+        Title = "KIX",
+        Desc = "Development, maintenance, and feature delivery.",
+        FullWidth = true,
+    })
+end
+
+return Updates
 end
 
 __modules["Games.99Nights.manifest"] = function()
@@ -448,6 +501,10 @@ function UI.Build(WindUI, options)
 
     local function addTab(key, title, icon)
         local tab = window:Tab({ Title = title, Icon = icon })
+
+        if key == "Updates" then
+            tab.TwoColumns = false
+        end
 
         if type(tab.Toggle) == "function" then
             local createToggle = tab.Toggle
