@@ -175,7 +175,7 @@ local function postJson(url, payload)
     local lastError = "unknown API error"
 
     for attempt = 1, CONFIG.RequestAttempts do
-        local ok, result = pcall(function()
+        local ok, statusCode, body = pcall(function()
             local requestBody = HttpService:JSONEncode(payload)
             local response = requestFunction({
                 Url = url,
@@ -193,11 +193,11 @@ local function postJson(url, payload)
             return statusCode, body
         end)
 
-        if ok and type(result) == "table" then
-            return true, result[1], result[2]
+        if ok then
+            return true, statusCode, body
         end
 
-        lastError = tostring(result)
+        lastError = tostring(statusCode)
         if attempt < CONFIG.RequestAttempts then
             task.wait(CONFIG.RetryDelay * attempt)
         end
