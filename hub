@@ -166,26 +166,15 @@ end
 
 local requestFunction = getRequestFunction()
 
-local function download(url)
-    if type(url) ~= "string" or url == "" or url:find("PASTE_", 1, true) then
-        return false, "Distribution endpoint has not been configured."
-    end
+local function postJson(url, payload)
     if not requestFunction then
-        return false, "This loader requires an executor HTTP request function."
+        return false, nil, "This loader requires an executor HTTP request function."
     end
-
-    local requestBody = HttpService:JSONEncode({
-        place_id = PLACE_ID,
-        game_id = GAME_ID,
-        player_id = PLAYER_ID,
-        fingerprint = FINGERPRINT,
-        client_version = CONFIG.ClientVersion,
-        channel = CONFIG.Channel,
-    })
     local lastError = "unknown API error"
 
     for attempt = 1, CONFIG.RequestAttempts do
         local ok, result = pcall(function()
+            local requestBody = HttpService:JSONEncode(payload)
             local response = requestFunction({
                 Url = url,
                 Method = "POST",
@@ -199,14 +188,11 @@ local function download(url)
             if not decoded or type(body) ~= "table" then
                 error("API returned invalid JSON")
             end
-            if statusCode ~= 200 or body.authorized ~= true or type(body.source) ~= "string" or #body.source == 0 then
-                error(tostring(body.error or body.reason or ("API status " .. tostring(statusCode))))
-            end
-            return body.source
+            return statusCode, body
         end)
 
-        if ok and type(result) == "string" and #result > 0 then
-            return true, result
+        if ok and type(result) == "table" then
+            return true, result[1], result[2]
         end
 
         lastError = tostring(result)
@@ -215,6 +201,159 @@ local function download(url)
         end
     end
 
+    return false, nil, lastError
+end
+
+local function promptAccessKey()
+    local saved = shared.KixHubAccessKey
+    if type(saved) == "string" and saved:match("%S") then
+        return true, saved
+    end
+
+    local parent = LocalPlayer and (LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5))
+    if not parent then return false, "PlayerGui is unavailable." end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "KixHubAccessKeyPrompt"
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 1001
+    gui.Parent = parent
+
+    local card = Instance.new("Frame")
+    card.AnchorPoint = Vector2.new(0.5, 0.5)
+    card.Position = UDim2.fromScale(0.5, 0.5)
+    card.Size = UDim2.fromOffset(390, 190)
+    card.BackgroundColor3 = Color3.fromRGB(24, 34, 55)
+    card.BorderSizePixel = 0
+    card.Parent = gui
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
+
+    local title = Instance.new("TextLabel")
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.fromOffset(22, 18)
+    title.Size = UDim2.new(1, -44, 0, 26)
+    title.Font = Enum.Font.GothamBold
+    title.Text = "KIXHUB ACCESS"
+    title.TextColor3 = Color3.fromRGB(236, 244, 255)
+    title.TextSize = 17
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = card
+
+    local note = Instance.new("TextLabel")
+    note.BackgroundTransparency = 1
+    note.Position = UDim2.fromOffset(22, 49)
+    note.Size = UDim2.new(1, -44, 0, 24)
+    note.Font = Enum.Font.Gotham
+    note.Text = "Enter your access key to continue."
+    note.TextColor3 = Color3.fromRGB(171, 190, 218)
+    note.TextSize = 13
+    note.TextXAlignment = Enum.TextXAlignment.Left
+    note.Parent = card
+
+    local box = Instance.new("TextBox")
+    box.Position = UDim2.fromOffset(22, 84)
+    box.Size = UDim2.new(1, -44, 0, 38)
+    box.BackgroundColor3 = Color3.fromRGB(38, 52, 78)
+    box.BorderSizePixel = 0
+    box.ClearTextOnFocus = false
+    box.Font = Enum.Font.Gotham
+    box.PlaceholderText = "KIX-XXXX-XXXX"
+    box.Text = ""
+    box.TextColor3 = Color3.fromRGB(240, 246, 255)
+    box.TextSize = 14
+    box.Parent = card
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+
+    local button = Instance.new("TextButton")
+    button.Position = UDim2.fromOffset(22, 135)
+    button.Size = UDim2.new(1, -44, 0, 36)
+    button.BackgroundColor3 = Color3.fromRGB(74, 143, 255)
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.GothamBold
+    button.Text = "Continue"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Parent = card
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+
+    local done, accepted = false, nil
+    button.MouseButton1Click:Connect(function()
+        local value = box.Text:match("^%s*(.-)%s*$")
+        if value ~= "" then accepted, done = value, true end
+    end)
+    box.FocusLost:Connect(function(enterPressed)
+        if enterPressed then button:Activate() end
+    end)
+
+    box:CaptureFocus()
+    repeat task.wait() until done or not gui.Parent
+    if gui.Parent then gui:Destroy() end
+    if not accepted then return false, "Access key entry was cancelled." end
+    shared.KixHubAccessKey = accepted
+    return true, accepted
+end
+
+local function requestAccessToken()
+    local key = ""
+    local prompted = false
+    while true do
+        local ok, statusCode, body = postJson(CONFIG.DistributionBaseUrl .. "/v1/token", {
+            key = key,
+            place_id = PLACE_ID,
+            game_id = GAME_ID,
+            player_id = PLAYER_ID,
+            fingerprint = FINGERPRINT,
+            client_version = CONFIG.ClientVersion,
+            channel = CONFIG.Channel,
+        })
+        if ok and statusCode == 200 and type(body) == "table" then
+            if body.authorized == true and type(body.token) == "string" then
+                return true, body.token
+            end
+            if body.reason ~= "key_required" then
+                return false, tostring(body.error or body.reason or "Access was not authorised.")
+            end
+        elseif ok and type(body) == "table" and body.reason ~= "key_required" then
+            return false, tostring(body.error or body.reason or "Access was not authorised.")
+        elseif not ok then
+            return false, tostring(body or statusCode or "Access service is unavailable.")
+        end
+
+        if prompted then return false, "The access key was not accepted." end
+        prompted = true
+        local entered, enteredKey = promptAccessKey()
+        if not entered then return false, enteredKey end
+        key = enteredKey
+    end
+end
+
+local function download(url, token)
+    if type(url) ~= "string" or url == "" or url:find("PASTE_", 1, true) then
+        return false, "Distribution endpoint has not been configured."
+    end
+
+    local lastError = "unknown API error"
+    for attempt = 1, CONFIG.RequestAttempts do
+        local ok, statusCode, bodyOrError = postJson(url, {
+            token = token,
+            place_id = PLACE_ID,
+            game_id = GAME_ID,
+            player_id = PLAYER_ID,
+            fingerprint = FINGERPRINT,
+            client_version = CONFIG.ClientVersion,
+            channel = CONFIG.Channel,
+        })
+        if ok and statusCode == 200 and type(bodyOrError) == "table" and bodyOrError.authorized == true and type(bodyOrError.source) == "string" and #bodyOrError.source > 0 then
+            return true, bodyOrError.source
+        end
+
+        if ok and type(bodyOrError) == "table" then
+            lastError = tostring(bodyOrError.error or bodyOrError.reason or ("API status " .. tostring(statusCode)))
+        else
+            lastError = tostring(statusCode or bodyOrError)
+        end
+        if attempt < CONFIG.RequestAttempts then task.wait(CONFIG.RetryDelay * attempt) end
+    end
     return false, lastError
 end
 
@@ -301,10 +440,22 @@ local windUIUrl = CONFIG.DistributionBaseUrl .. windUIPath
 
 updateStatus("Loading " .. entry.Name .. "...\nPlaceId: " .. placeId .. "\nGameId: " .. GAME_ID)
 
+updateStatus("Checking access...\n" .. entry.Name)
+local accessGranted, accessTokenOrError = requestAccessToken()
+if not accessGranted then
+    updateStatus(accessTokenOrError, true)
+    fail(accessTokenOrError)
+    task.delay(5, function()
+        if destroyStatus then destroyStatus() end
+    end)
+    return
+end
+local accessToken = accessTokenOrError
+
 if type(shared.KixHubWindUI) ~= "table" then
     updateStatus("Loading interface...\n" .. entry.Name)
 
-    local windUIDownloaded, windUISourceOrError = download(windUIUrl)
+    local windUIDownloaded, windUISourceOrError = download(windUIUrl, accessToken)
     if not windUIDownloaded then
         updateStatus(windUISourceOrError, true)
         fail(windUISourceOrError)
@@ -325,7 +476,7 @@ if type(shared.KixHubWindUI) ~= "table" then
     end
 end
 
-local downloaded, sourceOrError = download(url)
+local downloaded, sourceOrError = download(url, accessToken)
 if not downloaded then
     updateStatus(sourceOrError, true)
     fail(sourceOrError)
