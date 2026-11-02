@@ -63,6 +63,8 @@ local Games = {
         GameId = "7326934954",
         DevelopmentPath = "/kixhub/99nights/development",
         ProductionPath = "/kixhub/99nights/production",
+        DevelopmentWindUIPath = "/kixhub/windui/development",
+        ProductionWindUIPath = "/kixhub/windui/production",
     },
 
     --[[ Copy for a new game.
@@ -71,6 +73,8 @@ local Games = {
         GameId = "OPTIONAL_UNIVERSE_ID",
         DevelopmentPath = "/kixhub/new-game/development",
         ProductionPath = "/kixhub/new-game/production",
+        DevelopmentWindUIPath = "/kixhub/windui/development",
+        ProductionWindUIPath = "/kixhub/windui/production",
     },
     ]]
 }
@@ -222,6 +226,30 @@ local function runPayload(entry, source)
     return true
 end
 
+local function runWindUI(source)
+    if type(loadstring) ~= "function" then
+        return false, "loadstring is not available in this executor."
+    end
+
+    local compiled, chunk, compileError = pcall(
+        loadstring,
+        source,
+        "=KixHub/WindUI-Better"
+    )
+
+    if not compiled or type(chunk) ~= "function" then
+        return false, "WindUI compile failed: " .. tostring(compileError or chunk)
+    end
+
+    local ran, library = pcall(chunk)
+    if not ran or type(library) ~= "table" then
+        return false, "WindUI initialisation failed: " .. tostring(library)
+    end
+
+    shared.KixHubWindUI = library
+    return true
+end
+
 -- ============================================================================
 -- DISPATCH
 -- ============================================================================
@@ -243,8 +271,36 @@ local path = CONFIG.Channel == "production"
     and entry.ProductionPath
     or entry.DevelopmentPath
 local url = CONFIG.DistributionBaseUrl .. path
+local windUIPath = CONFIG.Channel == "production"
+    and entry.ProductionWindUIPath
+    or entry.DevelopmentWindUIPath
+local windUIUrl = CONFIG.DistributionBaseUrl .. windUIPath
 
 updateStatus("Loading " .. entry.Name .. "...\nPlaceId: " .. placeId)
+
+if type(shared.KixHubWindUI) ~= "table" then
+    updateStatus("Loading interface...\n" .. entry.Name)
+
+    local windUIDownloaded, windUISourceOrError = download(windUIUrl)
+    if not windUIDownloaded then
+        updateStatus(windUISourceOrError, true)
+        fail(windUISourceOrError)
+        task.delay(5, function()
+            if destroyStatus then destroyStatus() end
+        end)
+        return
+    end
+
+    local windUIReady, windUIError = runWindUI(windUISourceOrError)
+    if not windUIReady then
+        updateStatus(windUIError, true)
+        fail(windUIError)
+        task.delay(5, function()
+            if destroyStatus then destroyStatus() end
+        end)
+        return
+    end
+end
 
 local downloaded, sourceOrError = download(url)
 if not downloaded then
