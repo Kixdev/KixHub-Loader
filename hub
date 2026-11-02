@@ -2,14 +2,23 @@
 -- Main entry point for game detection, payload routing, and runtime startup.
 
 local CONFIG = {
+    -- Set this to the distribution endpoint before publishing.
     DistributionBaseUrl = "https://kixhub-distribution.lirikkuviral.workers.dev",
     Channel = "development",
+    ClientVersion = "kixhub-loader/2.0",
     RequestAttempts = 3,
     RetryDelay = 1,
 }
 
 local shared = (type(getgenv) == "function" and getgenv()) or _G
 local STATE_KEY = "KixHubUniversalLoader"
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PLACE_ID = tostring(game.PlaceId)
+local GAME_ID = tostring(game.GameId)
+local PLAYER_ID = LocalPlayer and tostring(LocalPlayer.UserId) or "0"
+local FINGERPRINT = tostring(shared.KixHubInstallationId or ("roblox-" .. PLAYER_ID))
 
 -- Session guard.
 local previous = shared[STATE_KEY]
@@ -60,20 +69,20 @@ local Games = {
     ["79546208627805"] = {
         Name = "99 Nights in the Forest",
         GameId = "7326934954",
-        DevelopmentPath = "/kixhub/99nights/development",
-        ProductionPath = "/kixhub/99nights/production",
-        DevelopmentWindUIPath = "/kixhub/windui/development",
-        ProductionWindUIPath = "/kixhub/windui/production",
+        DevelopmentPath = "/v1/scripts/load/",
+        ProductionPath = "/v1/scripts/load/",
+        DevelopmentWindUIPath = "/v1/runtime/load/windui",
+        ProductionWindUIPath = "/v1/runtime/load/windui",
     },
 
     --[[ Copy for a new game.
     ["PLACE_ID_HERE"] = {
         Name = "New Game Name",
         GameId = "OPTIONAL_UNIVERSE_ID",
-        DevelopmentPath = "/kixhub/new-game/development",
-        ProductionPath = "/kixhub/new-game/production",
-        DevelopmentWindUIPath = "/kixhub/windui/development",
-        ProductionWindUIPath = "/kixhub/windui/production",
+        DevelopmentPath = "/v1/scripts/load/",
+        ProductionPath = "/v1/scripts/load/",
+        DevelopmentWindUIPath = "/v1/runtime/load/windui",
+        ProductionWindUIPath = "/v1/runtime/load/windui",
     },
     ]]
 }
@@ -159,34 +168,41 @@ local requestFunction = getRequestFunction()
 
 local function download(url)
     if type(url) ~= "string" or url == "" or url:find("PASTE_", 1, true) then
-        return false, "Payload URL has not been configured yet."
+        return false, "Distribution endpoint has not been configured."
+    end
+    if not requestFunction then
+        return false, "This loader requires an executor HTTP request function."
     end
 
-    local lastError = "unknown download error"
+    local requestBody = HttpService:JSONEncode({
+        place_id = PLACE_ID,
+        game_id = GAME_ID,
+        player_id = PLAYER_ID,
+        fingerprint = FINGERPRINT,
+        client_version = CONFIG.ClientVersion,
+        channel = CONFIG.Channel,
+    })
+    local lastError = "unknown API error"
 
     for attempt = 1, CONFIG.RequestAttempts do
         local ok, result = pcall(function()
-            if requestFunction then
-                local response = requestFunction({
-                    Url = url,
-                    Method = "GET",
-                })
-                local body = response and (response.Body or response.body)
-                if type(body) ~= "string" or #body == 0 then
-                    error("empty HTTP response")
-                end
-                return body
+            local response = requestFunction({
+                Url = url,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = requestBody,
+                body = requestBody,
+            })
+            local statusCode = tonumber(response and (response.StatusCode or response.Status or response.status_code)) or 0
+            local raw = response and (response.Body or response.body) or ""
+            local decoded, body = pcall(HttpService.JSONDecode, HttpService, raw)
+            if not decoded or type(body) ~= "table" then
+                error("API returned invalid JSON")
             end
-
-            if type(game.HttpGet) ~= "function" then
-                error("no supported HTTP request function")
+            if statusCode ~= 200 or body.authorized ~= true or type(body.source) ~= "string" or #body.source == 0 then
+                error(tostring(body.error or body.reason or ("API status " .. tostring(statusCode))))
             end
-
-            local body = game:HttpGet(url)
-            if type(body) ~= "string" or #body == 0 then
-                error("empty HTTP response")
-            end
-            return body
+            return body.source
         end)
 
         if ok and type(result) == "string" and #result > 0 then
@@ -253,12 +269,20 @@ end
 -- DISPATCH
 -- ============================================================================
 
-local placeId = tostring(game.PlaceId)
+local placeId = PLACE_ID
 local entry = Games[placeId]
+if not entry then
+    for _, candidate in pairs(Games) do
+        if candidate.GameId and tostring(candidate.GameId) == GAME_ID then
+            entry = candidate
+            break
+        end
+    end
+end
 
 if not entry then
-    updateStatus("Game belum didukung.\nPlaceId: " .. placeId, true)
-    warn("[KixHub Loader] Unsupported PlaceId: " .. placeId)
+    updateStatus("Game belum didukung.\nPlaceId: " .. placeId .. "\nGameId: " .. GAME_ID, true)
+    warn("[KixHub Loader] Unsupported PlaceId: " .. placeId .. " | GameId: " .. GAME_ID)
     task.delay(4, function()
         if destroyStatus then destroyStatus() end
         release()
@@ -269,13 +293,13 @@ end
 local path = CONFIG.Channel == "production"
     and entry.ProductionPath
     or entry.DevelopmentPath
-local url = CONFIG.DistributionBaseUrl .. path
+local url = CONFIG.DistributionBaseUrl .. path .. placeId
 local windUIPath = CONFIG.Channel == "production"
     and entry.ProductionWindUIPath
     or entry.DevelopmentWindUIPath
 local windUIUrl = CONFIG.DistributionBaseUrl .. windUIPath
 
-updateStatus("Loading " .. entry.Name .. "...\nPlaceId: " .. placeId)
+updateStatus("Loading " .. entry.Name .. "...\nPlaceId: " .. placeId .. "\nGameId: " .. GAME_ID)
 
 if type(shared.KixHubWindUI) ~= "table" then
     updateStatus("Loading interface...\n" .. entry.Name)
