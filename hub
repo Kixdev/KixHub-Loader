@@ -15,8 +15,19 @@ local STATE_KEY = "KixHubUniversalLoader"
 -- Session guard.
 local previous = shared[STATE_KEY]
 if type(previous) == "table" and (previous.State == "loading" or previous.State == "ready") then
-    warn("[KixHub Loader] A loader or payload is already active.")
-    return
+    local previousShutdown = shared.KixHub99NightsShutdown
+    if type(previousShutdown) == "function" then
+        pcall(previousShutdown, "reload")
+    end
+    if type(previous.Retire) == "function" then
+        pcall(previous.Retire, "reload")
+    end
+    if shared[STATE_KEY] == previous then
+        shared[STATE_KEY] = nil
+    end
+    if shared.KixHub99NightsShutdown == previousShutdown then
+        shared.KixHub99NightsShutdown = nil
+    end
 end
 
 local state = {
@@ -260,7 +271,23 @@ end
 state.State = "ready"
 state.PlaceId = placeId
 state.Game = entry.Name
-state.Retire = nil
+
+local payloadShutdown = shared.KixHub99NightsShutdown
+local retired = false
+state.Retire = function(reason)
+    if retired then return end
+    retired = true
+
+    if type(payloadShutdown) == "function" then
+        pcall(payloadShutdown, reason or "shutdown")
+    end
+    if shared.KixHub99NightsShutdown == payloadShutdown then
+        shared.KixHub99NightsShutdown = nil
+    end
+    if shared[STATE_KEY] == state then
+        shared[STATE_KEY] = nil
+    end
+end
 
 if destroyStatus then
     destroyStatus()
@@ -268,7 +295,9 @@ end
 
 -- The payload may call this on shutdown.
 shared.KixHubLoaderRelease = function()
-    if shared[STATE_KEY] == state then
-        shared[STATE_KEY] = nil
+    if type(state.Retire) == "function" then
+        state.Retire("release")
+    else
+        release()
     end
 end
