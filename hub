@@ -2,7 +2,6 @@
 -- Main entry point for game detection, payload routing, and runtime startup.
 
 local CONFIG = {
-    -- Set this to the distribution endpoint before publishing.
     DistributionBaseUrl = "https://kixhub-distribution.lirikkuviral.workers.dev",
     Channel = "development",
     RequestAttempts = 3,
