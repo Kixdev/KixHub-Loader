@@ -3,7 +3,7 @@
 
 local CONFIG = {
     -- Set this to the distribution endpoint before publishing.
-    DistributionBaseUrl = "PASTE_DISTRIBUTION_ENDPOINT",
+    DistributionBaseUrl = "https://kixhub-distribution.lirikkuviral.workers.dev",
     Channel = "development",
     RequestAttempts = 3,
     RetryDelay = 1,
