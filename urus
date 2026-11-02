@@ -1,4 +1,0 @@
-local endpoint = "https://kixhub-distribution.lirikkuviral.workers.dev/kixhub/99nights/urus?v=2"
-local source = game:HttpGet(endpoint, true)
-assert(type(source) == "string" and #source > 0, "KixHub temporary payload is empty")
-loadstring(source)()
