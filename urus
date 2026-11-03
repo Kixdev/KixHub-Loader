@@ -1,0 +1,78 @@
+-- KIXHUB temporary payload loader
+-- Public wrapper only; the payload remains in the private repository.
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local shared = (type(getgenv) == "function" and getgenv()) or _G
+local player = Players.LocalPlayer
+local requestFunction = type(request) == "function" and request
+    or type(http_request) == "function" and http_request
+    or type(syn) == "table" and type(syn.request) == "function" and syn.request
+
+if not requestFunction then
+    warn("[KixHub Urus] Executor HTTP request is unavailable.")
+    return
+end
+
+local baseUrl = "https://kixhub-distribution.lirikkuviral.workers.dev"
+local placeId = tostring(game.PlaceId)
+local gameId = tostring(game.GameId)
+local playerId = player and tostring(player.UserId) or "0"
+local fingerprint = tostring(shared.KixHubInstallationId or ("roblox-" .. playerId))
+
+local function post(path, body)
+    local encoded = HttpService:JSONEncode(body)
+    local response = requestFunction({
+        Url = baseUrl .. path,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = encoded,
+        body = encoded,
+    })
+    local status = tonumber(response and (response.StatusCode or response.Status or response.status_code)) or 0
+    local raw = response and (response.Body or response.body) or ""
+    local decoded, result = pcall(HttpService.JSONDecode, HttpService, raw)
+    if not decoded or type(result) ~= "table" then
+        return status, nil, "The distribution service returned invalid JSON."
+    end
+    return status, result, nil
+end
+
+local client = {
+    key = "",
+    place_id = placeId,
+    game_id = gameId,
+    player_id = playerId,
+    fingerprint = fingerprint,
+    client_version = "kixhub-urus-loader/1.0",
+    channel = "development",
+}
+
+local tokenStatus, tokenBody, tokenError = post("/v1/token", client)
+if tokenStatus ~= 200 or not tokenBody or tokenBody.authorized ~= true then
+    warn("[KixHub Urus] Access request failed: " .. tostring((tokenBody and tokenBody.error) or tokenError or tokenStatus))
+    return
+end
+
+client.token = tokenBody.token
+local payloadStatus, payloadBody, payloadError = post("/v1/temporary/load/99nights-urus", client)
+if payloadStatus ~= 200 or not payloadBody or payloadBody.authorized ~= true or type(payloadBody.source) ~= "string" then
+    warn("[KixHub Urus] Payload request failed: " .. tostring((payloadBody and payloadBody.error) or payloadError or payloadStatus))
+    return
+end
+
+if type(loadstring) ~= "function" then
+    warn("[KixHub Urus] loadstring is unavailable in this executor.")
+    return
+end
+
+local compiled, chunk = pcall(loadstring, payloadBody.source, "=KixHub/99nights-urus")
+if not compiled or type(chunk) ~= "function" then
+    warn("[KixHub Urus] Payload compile failed: " .. tostring(chunk))
+    return
+end
+
+local ran, runtimeError = pcall(chunk)
+if not ran then
+    warn("[KixHub Urus] Payload runtime failed: " .. tostring(runtimeError))
+end
