@@ -1,6 +1,3 @@
--- KIXHUB temporary payload loader
--- Public wrapper only; the payload remains in the private repository.
-
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local shared = (type(getgenv) == "function" and getgenv()) or _G
