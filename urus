@@ -1,7 +1,7 @@
+-- KIXHUB temporary payload loader
+-- Public wrapper only; the payload remains in the private repository.
+
 local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local shared = (type(getgenv) == "function" and getgenv()) or _G
-local player = Players.LocalPlayer
 local requestFunction = type(request) == "function" and request
     or type(http_request) == "function" and http_request
     or type(syn) == "table" and type(syn.request) == "function" and syn.request
@@ -12,10 +12,6 @@ if not requestFunction then
 end
 
 local baseUrl = "https://kixhub-distribution.lirikkuviral.workers.dev"
-local placeId = tostring(game.PlaceId)
-local gameId = tostring(game.GameId)
-local playerId = player and tostring(player.UserId) or "0"
-local fingerprint = tostring(shared.KixHubInstallationId or ("roblox-" .. playerId))
 
 local function post(path, body)
     local encoded = HttpService:JSONEncode(body)
@@ -35,24 +31,10 @@ local function post(path, body)
     return status, result, nil
 end
 
-local client = {
-    key = "",
-    place_id = placeId,
-    game_id = gameId,
-    player_id = playerId,
-    fingerprint = fingerprint,
-    client_version = "kixhub-urus-loader/1.0",
-    channel = "development",
-}
+local payloadStatus, payloadBody, payloadError = post("/v1/temporary/load/99nights-urus", {
+    client_version = "kixhub-urus-loader/1.1",
+})
 
-local tokenStatus, tokenBody, tokenError = post("/v1/token", client)
-if tokenStatus ~= 200 or not tokenBody or tokenBody.authorized ~= true then
-    warn("[KixHub Urus] Access request failed: " .. tostring((tokenBody and tokenBody.error) or tokenError or tokenStatus))
-    return
-end
-
-client.token = tokenBody.token
-local payloadStatus, payloadBody, payloadError = post("/v1/temporary/load/99nights-urus", client)
 if payloadStatus ~= 200 or not payloadBody or payloadBody.authorized ~= true or type(payloadBody.source) ~= "string" then
     warn("[KixHub Urus] Payload request failed: " .. tostring((payloadBody and payloadBody.error) or payloadError or payloadStatus))
     return
